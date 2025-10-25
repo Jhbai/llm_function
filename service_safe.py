@@ -7,6 +7,7 @@ from rag import add_memory, get_memory
 from model import AI_Assistant
 from pydantic import BaseModel
 from functools import partial
+from db import conn, cursor
 import asyncio
 import uvicorn
 import secrets # 用於安全比較字串
@@ -27,6 +28,18 @@ class LLM_Object:
     def reset(self):
         pass
 
+class ChatRequest(BaseModel):
+    status: str
+
+class UserRequest(BaseModel):
+    user: str
+
+class ChatResponse(BaseModel):
+    message: str
+
+class HistoryRequest(BaseModel):
+    start: str
+    end: str
 
 class PromptRequest(BaseModel):
     prompt: str
@@ -47,19 +60,22 @@ class GetResponse(BaseModel):
 llm_instances: Dict[str, AI_Assistant] = {}
 
 security = HTTPBasic()
-SECRET_USERNAME = "abcde"
-SECRET_PASSWORD = "12345"
+SECRET_USERNAMES = ["bear", "dab", "mom"]
+SECRET_PASSWORDS = ["1015", "1015", "1015"]
 
 def authenticate_user(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(credentials.username, SECRET_USERNAME)
-    correct_password = secrets.compare_digest(credentials.password, SECRET_PASSWORD)
+    for i in range(len(SECRET_USERNAMES)):
+        SECRET_USERNAME, SECRET_PASSWORD = SECRET_USERNAMES[i], SECRET_PASSWORDS[i]
+        correct_username = secrets.compare_digest(credentials.username, SECRET_USERNAME)
+        correct_password = secrets.compare_digest(credentials.password, SECRET_PASSWORD)
+        if (correct_username and correct_password): break
     if not (correct_username and correct_password):
         raise HTTPException(
             status_code=401,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Basic"},
         )
-    return credentials.username
+    return {"user": credentials.username}
 
 auth_dependency = Depends(authenticate_user)
 
@@ -70,6 +86,41 @@ app = FastAPI(
     version="1.0.0"
 )
 
+@app.post(
+    "/chat",
+    tags=["chat box"],
+    summary="Each user can send message for group chat",
+    response_description="Group Chat",
+)
+async def group_chat(request: ChatRequest, auth: UserRequest=auth_dependency):
+    try:
+        res = cursor.execute("INSERT INTO ChatTable (user, message) VALUES (?, ?)",
+                             (auth, request.message)
+                             )
+        conn.commit()
+    except Exception as e:
+        print("Error:", e)
+        conn.rollback()
+    finally:
+        conn.close()
+    return JSONResponse(content={"status": "success"})
+
+@app.post(
+    "/chat_history",
+    tags=["chat box"],
+    summary="Search message from group chat",
+    response_description="Group Chat History",
+    dependencies=[auth_dependency]
+)
+async def history_chat(request: HistoryRequest):
+    st, ed = request.start, request.end
+    cursor.execute("""
+    SELECT user, message, dateTime
+    FROM ChatTable
+    WHERE dateTime BETWEEN ? AND ?
+    ORDER BY dateTime ASC
+    """, (st, ed))
+    return cursor.fetchall()
 
 @app.post(
     "/generate",

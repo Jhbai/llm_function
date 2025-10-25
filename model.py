@@ -61,9 +61,6 @@ agent_instruction = """<start_of_turn>user
 ]
 您可以使用以上工具。如果您決定呼叫任何函式，您「必須」僅回覆以下 JSON 格式，不得包含其他任何文字：
 {"name": "函式名稱", "parameters": {"參數名稱": 參數值}}
-
-{prompt}<end_of_turn>
-<start_of_turn>model
 """
 def AI_Agent(prompt):
     # ----- 結果儲存 ----- #
