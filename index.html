@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM 服務介面</title>
+    <style>
+        /* ----- 基本設定 & 重置 ----- */
+        :root {
+            --bg-color: #1a1a1a;
+            --container-bg: #2a2a2e;
+            --border-color: #444;
+            --text-color: #e0e0e0;
+            --input-bg: #333;
+            --own-msg-bg: #005f4b;
+            --other-msg-bg: #3a3f4c;
+            --assistant-msg-bg: #4a4a5c;
+            --button-bg: #0078d4;
+            --button-hover: #005a9e;
+            --danger-bg: #d92c2c;
+            --danger-hover: #a32121;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        /* ----- 登入畫面 ----- */
+        #login-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        #login-form {
+            background: var(--container-bg);
+            padding: 30px 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 300px;
+        }
+        #login-form h2 { text-align: center; margin-bottom: 10px; }
+        #login-form input {
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            background: var(--input-bg);
+            color: var(--text-color);
+            font-size: 1rem;
+        }
+        #login-form button {
+            padding: 10px;
+            border-radius: 4px;
+            border: none;
+            background: var(--button-bg);
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        #login-form button:hover { background: var(--button-hover); }
+        #login-error { color: #ff6b6b; text-align: center; font-size: 0.9rem; }
+        .hidden { display: none !important; }
+
+        /* ----- 主佈局 ----- */
+        #main-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+        .chat-column {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            border-left: 1px solid var(--border-color);
+        }
+
+        /* ----- 聊天視窗標頭 ----- */
+        .chat-header {
+            padding: 10px 15px;
+            background: var(--container-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-header h2 { font-weight: 500; }
+        .chat-header button {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+        #login-log-btn { background: var(--button-bg); color: white; }
+        #login-log-btn:hover { background: var(--button-hover); }
+        #reset-assistant-btn { background: var(--danger-bg); color: white; }
+        #reset-assistant-btn:hover { background: var(--danger-hover); }
+
+        /* ----- 訊息區域 ----- */
+        .messages-window {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        .loading-spinner {
+            display: block;
+            margin: 10px auto;
+            width: 30px;
+            height: 30px;
+            border: 4px solid var(--border-color);
+            border-top-color: var(--button-bg);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ----- 訊息樣式 (群組) ----- */
+        .message-container {
+            display: flex;
+            margin-bottom: 15px;
+            max-width: 80%;
+        }
+        
+        /* 其他人的訊息 */
+        .message-other {
+            align-items: flex-start;
+            align-self: flex-start;
+        }
+        .message-other .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #555;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            color: #fff;
+            margin-right: 10px;
+            flex-shrink: 0;
+            text-transform: uppercase;
+        }
+        .message-other .message-content {
+            display: flex;
+            flex-direction: column;
+        }
+        .message-other .username {
+            font-size: 0.8rem;
+            color: #aaa;
+            margin-bottom: 3px;
+        }
+        .message-other .message-bubble {
+            background: var(--other-msg-bg);
+            padding: 10px 14px;
+            border-radius: 12px 12px 12px 0;
+        }
+
+        /* 自己的訊息 */
+        .message-own {
+            align-self: flex-end;
+            margin-left: auto;
+        }
+        .message-own .message-bubble {
+            background: var(--own-msg-bg);
+            padding: 10px 14px;
+            border-radius: 12px 12px 0 12px;
+            color: white;
+            white-space: pre-wrap; /* 保持換行 */
+            word-break: break-word; /* 斷詞 */
+        }
+        .message-bubble-time {
+            font-size: 0.75rem;
+            color: #999;
+            margin-top: 5px;
+            text-align: right;
+        }
+
+        /* ----- 訊息樣式 (AI) ----- */
+        .message-assistant {
+            background: var(--assistant-msg-bg);
+            align-self: flex-start;
+            padding: 10px 14px;
+            border-radius: 12px 12px 12px 0;
+            margin-bottom: 10px;
+            max-width: 90%;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .message-user {
+            background: var(--own-msg-bg);
+            align-self: flex-end;
+            padding: 10px 14px;
+            border-radius: 12px 12px 0 12px;
+            margin-bottom: 10px;
+            max-width: 90%;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* ----- 輸入欄 ----- */
+        .input-bar {
+            padding: 10px 15px;
+            background: var(--container-bg);
+            border-top: 1px solid var(--border-color);
+        }
+        .input-bar form {
+            display: flex;
+            gap: 10px;
+        }
+        .input-bar input, .input-bar textarea {
+            flex-grow: 1;
+            padding: 12px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            background: var(--input-bg);
+            color: var(--text-color);
+            font-size: 1rem;
+            resize: none;
+        }
+        .input-bar button {
+            padding: 0 20px;
+            border-radius: 20px;
+            border: none;
+            background: var(--button-bg);
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .input-bar button:hover { background: var(--button-hover); }
+
+        /* ----- 右鍵選單 ----- */
+        #context-menu {
+            position: fixed;
+            display: none;
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            z-index: 200;
+        }
+        #context-menu div {
+            padding: 10px 20px;
+            cursor: pointer;
+            color: #ff6b6b;
+            font-weight: 500;
+        }
+        #context-menu div:hover {
+            background: var(--danger-bg);
+            color: white;
+        }
+
+        /* ----- 登入日誌 Modal ----- */
+        #log-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 50;
+            justify-content: center;
+            align-items: center;
+        }
+        #log-content {
+            background: var(--container-bg);
+            padding: 20px;
+            border-radius: 8px;
+            width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        #log-content h3 { margin-bottom: 15px; }
+        #log-list { list-style: none; }
+        #log-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        #log-list li:last-child { border-bottom: none; }
+        #log-list strong { color: var(--button-bg); }
+    </style>
+</head>
+<body>
+
+    <div id="login-modal">
+        <form id="login-form">
+            <h2>服務登入</h2>
+            <input type="text" id="username" placeholder="Username" required>
+            <input type="password" id="password" placeholder="Password" required>
+            <button type="submit">登入</button>
+            <p id="login-error" class="hidden"></p>
+        </form>
+    </div>
+
+    <div id="log-modal" class="hidden">
+        <div id="log-content">
+            <h3>使用者登入日誌</h3>
+            <ul id="log-list"></ul>
+            <button id="close-log-btn" style="width: 100%; margin-top: 15px; padding: 10px; border: none; border-radius: 4px; background: var(--button-bg); color: white; cursor: pointer;">關閉</button>
+        </div>
+    </div>
+
+    <div id="context-menu">
+        <div id="delete-option">刪除訊息</div>
+    </div>
+
+    <div id="main-container" class="hidden">
+        
+        <div class="chat-column" id="chat-container">
+            <div class="chat-header">
+                <h2>群組聊天</h2>
+                <button id="login-log-btn">登入日誌</button>
+            </div>
+            <div class="messages-window" id="chat-messages">
+                </div>
+            <div class="input-bar" id="chat-input-bar">
+                <form id="chat-form">
+                    <textarea id="chat-input" placeholder="輸入訊息..." rows="1" oninput="autoGrow(this)"></textarea>
+                    <button type="submit">傳送</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="chat-column" id="assistant-container">
+            <div class="chat-header">
+                <h2>AI 助理</h2>
+                <button id="reset-assistant-btn">清除對話</button>
+            </div>
+            <div class="messages-window" id="assistant-messages">
+                </div>
+            <div class="input-bar" id="assistant-input-bar">
+                <form id="assistant-form">
+                    <textarea id="assistant-input" placeholder="詢問 AI 助理..." rows="1" oninput="autoGrow(this)"></textarea>
+                    <button type="submit">傳送</button>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // ----- 全域變數 & DOM 元素 -----
+        const API_BASE_URL = "http://127.0.0.1:8080";
+
+        // 登入
+        const loginModal = document.getElementById('login-modal');
+        const loginForm = document.getElementById('login-form');
+        const loginError = document.getElementById('login-error');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const mainContainer = document.getElementById('main-container');
+
+        // 群組聊天
+        const chatMessages = document.getElementById('chat-messages');
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+
+        // AI 助理
+        const assistantMessages = document.getElementById('assistant-messages');
+        const assistantForm = document.getElementById('assistant-form');
+        const assistantInput = document.getElementById('assistant-input');
+        const resetAssistantBtn = document.getElementById('reset-assistant-btn');
+
+        // 右鍵選單
+        const contextMenu = document.getElementById('context-menu');
+        const deleteOption = document.getElementById('delete-option');
+
+        // 登入日誌
+        const loginLogBtn = document.getElementById('login-log-btn');
+        const logModal = document.getElementById('log-modal');
+        const logList = document.getElementById('log-list');
+        const closeLogBtn = document.getElementById('close-log-btn');
+
+        // 狀態
+        let currentUser = null;
+        let assistantUID = null;
+        let chatStartDate = null; // 用於儲存最早的訊息時間 (Lazy Loading)
+        let isLoadingChat = false; // 防止重複載入
+        let currentMessageToDelete = null; // 儲存待刪除的訊息 ID
+
+        // ----- 1. 核心功能: 認證 & API 請求 -----
+
+        /**
+         * 帶有 Basic Auth 的 fetch 封裝
+         */
+        async function fetchWithAuth(url, options = {}) {
+            const user = sessionStorage.getItem('username');
+            const pass = sessionStorage.getItem('password');
+
+            if (!user || !pass) {
+                showLogin("Session 已過期，請重新登入。");
+                return;
+            }
+
+            const headers = new Headers(options.headers || {});
+            headers.append('Authorization', 'Basic ' + btoa(user + ':' + pass));
+            if (options.body) {
+                headers.append('Content-Type', 'application/json');
+            }
+
+            try {
+                const response = await fetch(API_BASE_URL + url, {
+                    ...options,
+                    headers: headers
+                });
+
+                if (response.status === 401) {
+                    showLogin("認證失敗，請檢查您的帳號密碼。");
+                    throw new Error("Unauthorized");
+                }
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response;
+
+            } catch (error) {
+                console.error("API 請求失敗:", error);
+                if (url !== '/health') loginError.textContent = `API 連接失敗: ${error.message}`;
+                throw error;
+            }
+        }
+
+        /**
+         * 顯示登入畫面
+         */
+        function showLogin(errorMessage = "") {
+            sessionStorage.clear();
+            mainContainer.classList.add('hidden');
+            loginModal.classList.remove('hidden');
+            loginError.textContent = errorMessage;
+            loginError.classList.toggle('hidden', !errorMessage);
+        }
+
+        /**
+        * 處理登入邏輯
+        */
+        async function handleLogin(e) {
+            e.preventDefault();
+            const user = usernameInput.value;
+            const pass = passwordInput.value;
+            
+            // 暫存登入資訊
+            sessionStorage.setItem('username', user);
+            sessionStorage.setItem('password', pass);
+            
+            try {
+                // 使用 /health 或 /login/log 測試認證
+                await fetchWithAuth('/health'); 
+                
+                // 認證成功
+                currentUser = user;
+                loginModal.classList.add('hidden');
+                mainContainer.classList.remove('hidden');
+                
+                // (需求 2.2, 2.4) 初始化 AI 助理 UID
+                // 存在 sessionStorage 中，同一個 tab 刷新會是同一個 UID
+                assistantUID = sessionStorage.getItem('assistantUID');
+                if (!assistantUID) {
+                    assistantUID = 'web-user-' + crypto.randomUUID();
+                    sessionStorage.setItem('assistantUID', assistantUID);
+                }
+                console.log(`[AI Assistant] UID: ${assistantUID}`);
+
+                // 載入初始聊天紀錄
+                loadInitialChat();
+
+            } catch (error) {
+                // 認證失敗，fetchWithAuth 會自動處理
+                console.error("登入失敗:", error);
+            }
+        }
+
+        // ----- 2. 功能區塊: 群組聊天 -----
+
+        /**
+         * 載入初始聊天紀錄 (最近 24 小時)
+         */
+        async function loadInitialChat() {
+            const endDate = new Date().toISOString();
+            const startDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+            chatStartDate = startDate; // 儲存目前最早的時間點
+            
+            await loadChatHistory(startDate, endDate, false);
+            chatMessages.scrollTop = chatMessages.scrollHeight; // 捲到最底
+        }
+
+        /**
+         * (需求 1.8) 載入聊天紀錄 (Lazy Loading)
+         * @param {string} startDate - ISO 8601 日期字串
+         * @param {string} endDate - ISO 8601 日期字串
+         * @param {boolean} prepend - 是否插入到最前面 (true) 還是附加 (false)
+         */
+        async function loadChatHistory(startDate, endDate, prepend = false) {
+            if (isLoadingChat) return;
+            isLoadingChat = true;
+            
+            // 顯示讀取中
+            const loader = document.createElement('div');
+            loader.className = 'loading-spinner';
+            if (prepend) {
+                chatMessages.prepend(loader);
+            }
+
+            try {
+                const response = await fetchWithAuth('/chat_history', {
+                    method: 'POST',
+                    body: JSON.stringify({ start: startDate, end: endDate })
+                });
+                const history = await response.json(); // API 回傳 [user, message, dateTime]
+
+                if (prepend) loader.remove(); // 移除讀取中
+
+                if (history.length > 0) {
+                    // 更新下一次 lazy load 的起始時間
+                    chatStartDate = history[0][2]; // 儲存這批最舊的時間 [user, message, dateTime]
+                    
+                    const fragment = document.createDocumentFragment();
+                    // [注意] API 回傳格式是 [user, message, dateTime]，但 db.py 有 id
+                    // 您的 API /chat_history 回傳 (user, message, dateTime)
+                    // 但 /delete_history 需要 (id)
+                    // 這表示 /chat_history 應該也要回傳 id
+                    // 假設 /chat_history 回傳格式為 [id, user, message, dateTime]
+                    // *** 警告：您提供的 service_safe.py 中 /chat_history SELECT 的是 user, message, dateTime，沒有 id。
+                    // *** 為了滿足刪除功能 (1.5)，我必須假設您會修改 SQL 查詢為：
+                    // *** SELECT id, user, message, dateTime FROM ChatTable ...
+                    // *** 如果您無法修改，刪除功能將無法運作。
+                    
+                    // 假設回傳格式已修正為 [id, user, message, dateTime]
+                    // 為了演示，我將使用索引。如果您的 SQL 未改，請將 history[i][0] 改為 (例如) i
+                    
+                    for (let i = 0; i < history.length; i++) {
+                        const msgData = {
+                            id: history[i][0], // 假設 id 是第 0 個
+                            user: history[i][1],
+                            message: history[i][2],
+                            dateTime: history[i][3]
+                        };
+                        fragment.appendChild(createChatMessageElement(msgData));
+                    }
+
+                    if (prepend) {
+                        const oldScrollHeight = chatMessages.scrollHeight;
+                        chatMessages.prepend(fragment);
+                        chatMessages.scrollTop = chatMessages.scrollHeight - oldScrollHeight; // 保持捲動位置
+                    } else {
+                        chatMessages.appendChild(fragment);
+                    }
+                } else {
+                    if (prepend) {
+                         // 沒有更多訊息了
+                        const noMoreMsg = document.createElement('div');
+                        noMoreMsg.textContent = "--- 已載入所有訊息 ---";
+                        noMoreMsg.style.textAlign = "center";
+                        noMoreMsg.style.padding = "10px";
+                        noMoreMsg.style.color = "#888";
+                        chatMessages.prepend(noMoreMsg);
+                        chatMessages.removeEventListener('scroll', handleChatScroll); // 停止監聽
+                    }
+                }
+            } catch (error) {
+                console.error("載入聊天紀錄失敗:", error);
+                if (prepend) loader.remove();
+            } finally {
+                isLoadingChat = false;
+            }
+        }
+
+        /**
+         * (需求 1.8) 處理聊天視窗捲動 (Lazy Loading)
+         */
+        function handleChatScroll() {
+            if (chatMessages.scrollTop === 0 && !isLoadingChat && chatStartDate) {
+                console.log("觸發 Lazy Loading...");
+                const newEndDate = chatStartDate;
+                const newStartDate = new Date(new Date(newEndDate).getTime() - 24 * 60 * 60 * 1000).toISOString();
+                
+                loadChatHistory(newStartDate, newEndDate, true);
+            }
+        }
+
+        /**
+         * (需求 1.2, 1.3) 建立聊天訊息 DOM 元素
+         */
+        function createChatMessageElement(msg) {
+            const container = document.createElement('div');
+            container.classList.add('message-container');
+            container.dataset.id = msg.id; // (需求 1.9) 儲存 id
+            container.dataset.user = msg.user;
+
+            const bubble = document.createElement('div');
+            bubble.classList.add('message-bubble');
+            bubble.textContent = msg.message;
+
+            // 加上時間
+            const time = document.createElement('div');
+            time.classList.add('message-bubble-time');
+            time.textContent = new Date(msg.dateTime).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+            bubble.appendChild(time);
+
+            if (msg.user === currentUser) {
+                // (需求 1.3) 自己的訊息
+                container.classList.add('message-own');
+                container.appendChild(bubble);
+            } else {
+                // (需求 1.2) 別人的訊息
+                container.classList.add('message-other');
+                
+                const avatar = document.createElement('div');
+                avatar.classList.add('avatar');
+                avatar.textContent = msg.user.substring(0, 2); // 顯示 user name 前兩個字
+                
+                const content = document.createElement('div');
+                content.classList.add('message-content');
+                
+                const username = document.createElement('span');
+                username.classList.add('username');
+                username.textContent = msg.user;
+                
+                content.appendChild(username);
+                content.appendChild(bubble);
+                
+                container.appendChild(avatar);
+                container.appendChild(content);
+            }
+            return container;
+        }
+        
+        /**
+         * (需求 1.6, 1.7) 傳送群組訊息
+         */
+        async function sendChatMessage(e) {
+            e.preventDefault();
+            const message = chatInput.value.trim();
+            if (!message) return;
+
+            // 立即顯示在畫面上
+            const msgData = {
+                id: `temp-${Date.now()}`, // 暫時 ID
+                user: currentUser,
+                message: message,
+                dateTime: new Date().toISOString()
+            };
+            const msgElement = createChatMessageElement(msgData);
+            chatMessages.appendChild(msgElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            chatInput.value = "";
+            chatInput.style.height = 'auto'; // 重置輸入框高度
+
+            try {
+                // (需求 1.6) 呼叫 /chat
+                const response = await fetchWithAuth('/chat', {
+                    method: 'POST',
+                    body: JSON.stringify({ message: message })
+                });
+                
+                // 成功後，理論上應該要取得新訊息的
+                // ID 並更新 msgElement.dataset.id
+                // 但 /chat API 只回傳 {"status": "success"}
+                // 這會導致刪除功能在刷新前無法對這則新訊息作用
+                // (暫時接受此限制)
+                
+                // (需求 1.7) 呼叫 /memorize
+                await fetchWithAuth('/memorize', {
+                    method: 'POST',
+                    body: JSON.stringify({ prompt: message })
+                });
+                console.log("訊息已傳送並觸發記憶檢查。");
+
+            } catch (error) {
+                console.error("傳送訊息失敗:", error);
+                msgElement.style.opacity = '0.5';
+                msgElement.title = "傳送失敗";
+            }
+        }
+
+        /**
+         * (需求 1.5) 處理右鍵選單
+         */
+        function handleContextMenu(e) {
+            const messageElement = e.target.closest('.message-own');
+            
+            // 必須是 .message-own (自己的訊息)
+            if (messageElement && messageElement.dataset.user === currentUser) {
+                e.preventDefault();
+                currentMessageToDelete = messageElement.dataset.id;
+                
+                contextMenu.style.top = `${e.clientY}px`;
+                contextMenu.style.left = `${e.clientX}px`;
+                contextMenu.style.display = 'block';
+            }
+        }
+
+        /**
+         * (需求 1.5) 刪除訊息
+         */
+        async function deleteChatMessage() {
+            if (!currentMessageToDelete) return;
+
+            const messageId = currentMessageToDelete;
+            currentMessageToDelete = null; // 清除
+            
+            // *** 警告：id 必須是數字 (INTEGER)
+            // 如果是 temp-id，會失敗
+            if (messageId.startsWith('temp-')) {
+                console.warn("無法刪除尚未同步的訊息");
+                return;
+            }
+
+            try {
+                await fetchWithAuth('/delete_history', {
+                    method: 'POST',
+                    body: JSON.stringify({ id: parseInt(messageId) })
+                });
+                
+                // 從 DOM 中移除
+                const elementToRemove = chatMessages.querySelector(`[data-id="${messageId}"]`);
+                if (elementToRemove) {
+                    elementToRemove.remove();
+                }
+
+            } catch (error) {
+                console.error("刪除訊息失敗:", error);
+            }
+        }
+
+        /**
+         * (需求 1.4) 顯示登入日誌
+         */
+        async function showLoginLog() {
+            try {
+                const response = await fetchWithAuth('/login/log');
+                const logs = await response.json();
+                
+                logList.innerHTML = ""; // 清空
+                for (const [user, time] of Object.entries(logs)) {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<strong>${user}</strong>: ${time}`;
+                    logList.appendChild(li);
+                }
+                logModal.classList.remove('hidden');
+                logModal.style.display = 'flex'; // 覆蓋 .hidden
+
+            } catch (error) {
+                console.error("無法取得登入日誌:", error);
+            }
+        }
+
+        // ----- 3. 功能區塊: AI 助理 -----
+
+        /**
+         * (需求 2.3) 傳送訊息給 AI
+         */
+        async function sendAssistantMessage(e) {
+            e.preventDefault();
+            const prompt = assistantInput.value.trim();
+            if (!prompt) return;
+
+            // (需求 2.3) 顯示使用者訊息
+            const userMsgElement = document.createElement('div');
+            userMsgElement.classList.add('message-user');
+            userMsgElement.textContent = prompt;
+            assistantMessages.appendChild(userMsgElement);
+            assistantInput.value = "";
+            assistantInput.style.height = 'auto'; // 重置輸入框高度
+            assistantMessages.scrollTop = assistantMessages.scrollHeight;
+
+            // 建立 AI 回應的容器
+            const assistantMsgElement = document.createElement('div');
+            assistantMsgElement.classList.add('message-assistant');
+            assistantMsgElement.textContent = "思考中...";
+            assistantMessages.appendChild(assistantMsgElement);
+            assistantMessages.scrollTop = assistantMessages.scrollHeight;
+
+            try {
+                // (需求 2.3) 呼叫 /generate (Streaming)
+                const response = await fetchWithAuth('/generate', {
+                    method: 'POST',
+                    body: JSON.stringify({ 
+                        prompt: prompt, 
+                        uid: assistantUID // (需求 2.2) 綁定 UID
+                    })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullResponse = "";
+                assistantMsgElement.textContent = ""; // 清除 "思考中..."
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    fullResponse += chunk;
+                    assistantMsgElement.textContent = fullResponse; // 即時更新
+                    assistantMessages.scrollTop = assistantMessages.scrollHeight;
+                }
+
+            } catch (error) {
+                console.error("AI 助理請求失敗:", error);
+                assistantMsgElement.textContent = `錯誤: ${error.message}`;
+                assistantMsgElement.style.color = '#ff6b6b';
+            }
+        }
+
+        /**
+         * (需求 2.5) 重置 AI 對話
+         */
+        async function resetAssistant() {
+            if (!assistantUID) return;
+
+            console.log(`[AI Assistant] 重置 UID: ${assistantUID}`);
+            try {
+                await fetchWithAuth('/reset', {
+                    method: 'POST',
+                    body: JSON.stringify({ uid: assistantUID })
+                });
+                
+                assistantMessages.innerHTML = ""; // 清空畫面
+                
+            } catch (error) {
+                console.error("重置 AI 失敗:", error);
+            }
+        }
+
+        /**
+         * (需求 2.5) 處理頁面關閉事件
+         */
+        function handlePageClose() {
+            if (!assistantUID) return;
+            
+            // 警告：
+            // 現代瀏覽器嚴格限制 beforeunload/unload 中的異步操作 (如 fetch)。
+            // 唯一可靠的方法是使用 navigator.sendBeacon 或 *同步* XHR。
+            // 由於 API 需要 Basic Auth，sendBeacon 無法直接使用 (它不能設定 Authorization 標頭)。
+            // 因此，我們被迫使用已棄用但仍可運作的 *同步* XMLHttpRequest。
+            // 這會短暫鎖定 UI，但能確保請求發出。
+            
+            const user = sessionStorage.getItem('username');
+            const pass = sessionStorage.getItem('password');
+            if (!user || !pass) return;
+
+            const xhr = new XMLHttpRequest();
+            const url = `${API_BASE_URL}/reset`;
+            const data = JSON.stringify({ uid: assistantUID });
+
+            // false 代表同步請求
+            xhr.open('POST', url, false); 
+            
+            // 設定標頭
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.setRequestHeader('Authorization', 'Basic ' + btoa(user + ':' + pass));
+            
+            try {
+                xhr.send(data);
+                console.log(`[AI Assistant] 頁面關閉，已同步請求重置 UID: ${assistantUID}`);
+            } catch (e) {
+                console.error("[AI Assistant] 同步重置請求失敗:", e);
+            }
+        }
+
+        // ----- 4. 輔助功能 & 事件監聽 -----
+
+        /**
+         * 輔助功能: textarea 自動增高
+         */
+        function autoGrow(element) {
+            element.style.height = 'auto';
+            element.style.height = (element.scrollHeight) + 'px';
+        }
+
+        // DOM 載入完成後執行
+        document.addEventListener('DOMContentLoaded', () => {
+            // 檢查是否已登入
+            if (sessionStorage.getItem('username') && sessionStorage.getItem('password')) {
+                // 模擬登入流程以初始化
+                usernameInput.value = sessionStorage.getItem('username');
+                passwordInput.value = sessionStorage.getItem('password');
+                handleLogin(new Event('submit'));
+            } else {
+                showLogin();
+            }
+
+            // 登入
+            loginForm.addEventListener('submit', handleLogin);
+
+            // 群組聊天
+            chatForm.addEventListener('submit', sendChatMessage);
+            chatMessages.addEventListener('scroll', handleChatScroll);
+
+            // AI 助理
+            assistantForm.addEventListener('submit', sendAssistantMessage);
+            resetAssistantBtn.addEventListener('click', resetAssistant);
+
+            // (需求 2.5) 綁定頁面關閉/刷新事件
+            window.addEventListener('beforeunload', handlePageClose);
+
+            // 右鍵選單
+            chatMessages.addEventListener('contextmenu', handleContextMenu);
+            deleteOption.addEventListener('click', () => {
+                deleteChatMessage();
+                contextMenu.style.display = 'none';
+            });
+            // 點擊其他地方隱藏選單
+            document.addEventListener('click', () => {
+                contextMenu.style.display = 'none';
+                currentMessageToDelete = null;
+            });
+
+            // 登入日誌
+            loginLogBtn.addEventListener('click', showLoginLog);
+            closeLogBtn.addEventListener('click', () => {
+                logModal.classList.add('hidden');
+                logModal.style.display = 'none';
+            });
+        });
+
+    </script>
+</body>
+</html>

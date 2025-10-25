@@ -67,7 +67,7 @@ def AI_Agent(prompt):
     res = list()
 
     # ----- Prompt token產生 ----- #
-    MSG = agent_instruction + prompt + "<end_of_turn>\n<start_of_turn>model"
+    MSG = agent_instruction + prompt + "<end_of_turn>\n<start_of_turn>model" + "\n{"
     input_ids = torch.tensor(tokenizer.encode(MSG)).to(model.device)
     input_ids = input_ids.unsqueeze(0)
     eos_token_ids = [tokenizer.eos_token_id, 106]
